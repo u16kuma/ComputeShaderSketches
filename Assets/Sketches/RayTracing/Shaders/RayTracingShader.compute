@@ -7,6 +7,7 @@ Texture2D<float4> _SkyboxTexture;
 SamplerState sampler_SkyboxTexture;
 // 円周率
 static const float PI = 3.14159265f;
+float2 _PixelOffset;
 
 // Ray情報の構造体
 struct Ray
@@ -95,16 +96,15 @@ void IntersectGroundPlane(Ray ray, inout RayHit bestHit)
 // 球と衝突していたらbestHitに衝突情報を格納
 void IntersectSphere(Ray ray, inout RayHit bestHit, float4 sphere)
 {
-    // 球からのカメラ方向へのベクトル
     float3 d = ray.origin - sphere.xyz;
     float p1 = -dot(ray.direction, d);
-    float p2sqr = p1 * p1 - dot(d, d) + sphere.w * sphere.w;
+    float radius = sphere.w;
+    float p2sqr = p1 * p1 - dot(d, d) + radius * radius;
     if (p2sqr < 0)
     {
         return;
     }
     float p2 = sqrt(p2sqr);
-    // ２次方程式の解のうち大きい値を使用する
     float t = p1 - p2 > 0 ? p1 - p2 : p1 + p2;
     // 球と衝突した && bestHitに格納されている衝突情報より近い位置で衝突した
     if (0 < t && t < bestHit.distance)
@@ -156,12 +156,13 @@ float3 Shade(inout Ray ray, RayHit hit)
 void CSMain(uint3 id : SV_DispatchThreadID)
 {
     // RenderTextureのサイズを取得
-    uint width;
-    uint height;
-    Result.GetDimensions(width, height);
-
+    float2 size;
+    Result.GetDimensions(size.x, size.y);
+    // CPU側で毎フレーム生成したランダムなオフセット値を加算
+    // （アンチエイリアス描画のため）
+    float2 pixel = id.xy + _PixelOffset;
     // スクリーン座標をビューポート座標（[-1 ~ 1, -1 ~ 1]）に変換
-    float2 uv = float2((id.xy + float2(0.5f, 0.5f)) / float2(width, height) * 2.0f - 1.0f);
+    float2 uv = float2(pixel / size * 2.0f - 1.0f);
 
     // 指定uvのRayを取得
     Ray ray = CreateCameraRay(uv);
