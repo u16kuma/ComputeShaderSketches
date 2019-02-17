@@ -1,0 +1,64 @@
+﻿using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class RayTracingMain : MonoBehaviour
+{
+	public ComputeShader rayTracingShader;
+	public Texture skyboxTexture;
+	private RenderTexture target;
+	private new Camera camera;
+
+	private void Awake()
+	{
+		camera = GetComponent<Camera>();
+	}
+
+	private void SetShaderParameters()
+	{
+		rayTracingShader.SetMatrix("_CameraToWorld", camera.cameraToWorldMatrix);
+		rayTracingShader.SetMatrix("_CameraInverseProjection", camera.projectionMatrix.inverse);
+		rayTracingShader.SetTexture(0, "_SkyboxTexture", skyboxTexture);
+	}
+
+	private void OnRenderImage(RenderTexture source, RenderTexture destination)
+	{
+		Render(destination);
+	}
+
+	private void Render(RenderTexture destination)
+	{
+		InitRenderTexture();
+
+		SetShaderParameters();
+
+		rayTracingShader.SetTexture(0, "Result", target);
+		int threadGroupX = Mathf.CeilToInt(Screen.width / 8.0f);
+		int threadGroupY = Mathf.CeilToInt(Screen.height / 8.0f);
+		rayTracingShader.Dispatch(0, threadGroupX, threadGroupY, 1);
+
+		Graphics.Blit(target, destination);
+	}
+
+	private void InitRenderTexture()
+	{
+		if (target == null ||
+			target.width != Screen.width ||
+			target.height != Screen.height)
+		{
+			if (target != null)
+			{
+				target.Release();
+			}
+
+			target = new RenderTexture(
+				width: Screen.width,
+				height: Screen.height,
+				depth: 0,
+				format: RenderTextureFormat.ARGBFloat,
+				readWrite: RenderTextureReadWrite.Linear);
+			target.enableRandomWrite = true;
+			target.Create();
+		}
+	}
+}

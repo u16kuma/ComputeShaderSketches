@@ -1,0 +1,174 @@
+﻿#pragma kernel CSMain
+
+RWTexture2D<float4> Result;
+float4x4 _CameraToWorld;
+float4x4 _CameraInverseProjection;
+Texture2D<float4> _SkyboxTexture;
+SamplerState sampler_SkyboxTexture;
+// 円周率
+static const float PI = 3.14159265f;
+
+// Ray情報の構造体
+struct Ray
+{
+    // 開始地点
+    float3 origin;
+    // Rayの向き
+    float3 direction;
+};
+
+// Rayの生成
+Ray CreateRay(float3 origin, float3 direction)
+{
+    Ray ray;
+    ray.origin = origin;
+    ray.direction = direction;
+    return ray;
+}
+
+// カメラのRay情報を生成
+Ray CreateCameraRay(float2 uv)
+{
+    // ワールド空間でのカメラの位置を取得
+    // （ビュー座標系の[0,0,0]の位置はカメラが置かれた位置になる）
+    float3 origin = mul(_CameraToWorld, float4(0.0f, 0.0f, 0.0f, 1.0f)).xyz;
+
+    // ワールド空間でのカメラの向きを取得
+    float3 direction;
+    {
+        // 射影座標系からビュー座標系へ変換
+        // ビューポート座標[-1 ~ 1, -1 ~ 1, 0, 1]を射影変換行列の逆行列をかけると
+        // カメラ座標系での前方クリップ面の座標が求められる
+        // （カメラからのオフセット値になる）
+        direction = mul(_CameraInverseProjection, float4(uv, 0.0f, 1.0f)).xyz;
+        // ビュー座標系からワールド座標系へ変換（回転）
+        // （ワールド空間でのカメラからのオフセット値）
+        direction = mul(_CameraToWorld, float4(direction, 0.0f)).xyz;
+        // ベクトルを正規化
+        // （ワールド空間でのカメラの向き）
+        direction = normalize(direction);
+    }
+
+    return CreateRay(origin, direction);
+}
+
+// RayHit情報の構造体
+struct RayHit
+{
+    // Rayが衝突した地点
+    float3 position;
+    // カメラとの距離
+    float distance;
+    // Rayが衝突した地点の法線情報
+    float3 normal;
+};
+
+// RayHitの生成
+RayHit CreateRayHit()
+{
+    RayHit hit;
+    hit.position = float3(0.0f, 0.0f, 0.0f);
+    hit.distance = 1.#INF;
+    hit.normal = float3(0.0f, 0.0f, 0.0f);
+    return hit;
+}
+
+// 地面との衝突判定（y = 0の平面とする）
+// 地面と衝突していたらbestHitに衝突情報を格納
+void IntersectGroundPlane(Ray ray, inout RayHit bestHit)
+{
+    // カメラと地面との距離を算出
+    float t = -ray.origin.y / ray.direction.y;
+    // 地面と衝突した && bestHitに格納されている衝突情報より近い位置で衝突した
+    if (0 < t && t < bestHit.distance)
+    {
+        // 地面とカメラの距離を格納
+        bestHit.distance = t;
+        // 衝突した位置を格納
+        bestHit.position = ray.origin + t * ray.direction;
+        // 地面は上向きとする
+        bestHit.normal = float3(0.0f, 1.0f, 0.0f);
+    }
+}
+
+// 球との衝突判定
+// 球と衝突していたらbestHitに衝突情報を格納
+void IntersectSphere(Ray ray, inout RayHit bestHit, float4 sphere)
+{
+    // 球からのカメラ方向へのベクトル
+    float3 d = ray.origin - sphere.xyz;
+    float p1 = -dot(ray.direction, d);
+    float p2sqr = p1 * p1 - dot(d, d) + sphere.w * sphere.w;
+    if (p2sqr < 0)
+    {
+        return;
+    }
+    float p2 = sqrt(p2sqr);
+    // ２次方程式の解のうち大きい値を使用する
+    float t = p1 - p2 > 0 ? p1 - p2 : p1 + p2;
+    // 球と衝突した && bestHitに格納されている衝突情報より近い位置で衝突した
+    if (0 < t && t < bestHit.distance)
+    {
+        // 球とカメラの距離を格納
+        bestHit.distance = t;
+        // 衝突した位置を格納
+        bestHit.position = ray.origin + t * ray.direction;
+        // 衝突した位置の向きを格納（衝突した位置から級の頂点）
+        bestHit.normal = normalize(bestHit.position - sphere.xyz);
+    }
+}
+
+// 順番にオブジェクトとの衝突判定を行い
+// 一番近い位置で衝突した情報を格納する
+RayHit Trace(Ray ray)
+{
+    RayHit bestHit = CreateRayHit();
+    // 地面との衝突判定
+    IntersectGroundPlane(ray, bestHit);
+    // 球との衝突判定
+    IntersectSphere(ray, bestHit, float4(0, 3.0f, 0, 3.0f));
+    
+    return bestHit;
+}
+
+// 衝突情報をもとに色情報を出力する
+float3 Shade(inout Ray ray, RayHit hit)
+{
+    // 何らかのオブジェクトと衝突したか
+    if (hit.distance < 1.#INF)
+    {
+        // 衝突した地点の法線情報を色として出力
+        return hit.normal * 0.5f + 0.5f;
+    }
+    // 何とも衝突していない場合はスカイボックス色を出力する
+    else
+    {
+        // デカルト座標系を球面座標系に変換
+        float theta = acos(ray.direction.y) / -PI;
+        float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
+
+        // スカイボックスの色を出力
+        return _SkyboxTexture.SampleLevel(sampler_SkyboxTexture, float2(phi, theta), 0).xyz;
+    }
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    // RenderTextureのサイズを取得
+    uint width;
+    uint height;
+    Result.GetDimensions(width, height);
+
+    // スクリーン座標をビューポート座標（[-1 ~ 1, -1 ~ 1]）に変換
+    float2 uv = float2((id.xy + float2(0.5f, 0.5f)) / float2(width, height) * 2.0f - 1.0f);
+
+    // 指定uvのRayを取得
+    Ray ray = CreateCameraRay(uv);
+    // Ray方向で一番近い地点の衝突情報を取得
+    RayHit hit = Trace(ray);
+    // 色情報に変換
+    float3 result = Shade(ray, hit);
+    // 色を格納
+    Result[id.xy] = float4(result, 1);
+}
