@@ -16,6 +16,8 @@ struct Ray
     float3 origin;
     // Rayの向き
     float3 direction;
+    // エネルギー
+    float3 energy;
 };
 
 // Rayの生成
@@ -24,6 +26,7 @@ Ray CreateRay(float3 origin, float3 direction)
     Ray ray;
     ray.origin = origin;
     ray.direction = direction;
+    ray.energy = float3(1.0f, 1.0f, 1.0f);
     return ray;
 }
 
@@ -137,12 +140,21 @@ float3 Shade(inout Ray ray, RayHit hit)
     // 何らかのオブジェクトと衝突したか
     if (hit.distance < 1.#INF)
     {
-        // 衝突した地点の法線情報を色として出力
-        return hit.normal * 0.5f + 0.5f;
+        float3 specular = float3(0.6f, 0.6f, 0.6f);
+
+        // 反射させたRay情報で更新
+        ray.origin = hit.position + hit.normal * 0.001f;
+        ray.direction = reflect(ray.direction, hit.normal);
+        ray.energy *= specular;
+
+        return float3(0, 0, 0);
     }
     // 何とも衝突していない場合はスカイボックス色を出力する
     else
     {
+        // スカイボックスは反射しないのでエネルギーを０に設定
+        ray.energy = 0.0f;
+
         // デカルト座標系を球面座標系に変換
         float theta = acos(ray.direction.y) / -PI;
         float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
@@ -166,10 +178,22 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
     // 指定uvのRayを取得
     Ray ray = CreateCameraRay(uv);
-    // Ray方向で一番近い地点の衝突情報を取得
-    RayHit hit = Trace(ray);
-    // 色情報に変換
-    float3 result = Shade(ray, hit);
+    
+    // 最大８回反射する
+    float3 result = float3(0, 0, 0);
+    for (int i = 0; i < 8; i++)
+    {
+        // Ray方向で一番近い地点の衝突情報を取得
+        RayHit hit = Trace(ray);
+        // 色情報に変換
+        result += ray.energy * Shade(ray, hit);
+
+        // エネルギーが無くなったら終了
+        if (!any(ray.energy))
+        {
+            break;
+        }
+    }
     // 色を格納
     Result[id.xy] = float4(result, 1);
 }
