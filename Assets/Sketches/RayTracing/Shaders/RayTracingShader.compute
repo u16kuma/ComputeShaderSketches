@@ -150,6 +150,7 @@ float3 Shade(inout Ray ray, RayHit hit)
         ray.energy *= specular;
 
         // シャドウテスト
+        // ライト方向にRayを打って何にもぶつからなかったら（遮蔽物がなかったら）光があたっていることにする
         bool shadow = false;
         Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001f, -1 * _DirectionalLight.xyz);
         RayHit shadowHit = Trace(shadowRay);
