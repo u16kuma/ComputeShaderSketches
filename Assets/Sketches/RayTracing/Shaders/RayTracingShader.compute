@@ -1,5 +1,18 @@
 ﻿#pragma kernel CSMain
 
+// 球オブジェクト
+struct Sphere
+{
+    // 球の中心位置
+    float3 position;
+    // 球の半径
+    float radius;
+    // 球のアルベド
+    float3 albedo;
+    // 球のスペキュラ
+    float3 specular;
+};
+
 RWTexture2D<float4> Result;
 float4x4 _CameraToWorld;
 float4x4 _CameraInverseProjection;
@@ -9,6 +22,7 @@ SamplerState sampler_SkyboxTexture;
 static const float PI = 3.14159265f;
 float2 _PixelOffset;
 float4 _DirectionalLight;
+StructuredBuffer<Sphere> _Spheres;
 
 // Ray情報の構造体
 struct Ray
@@ -66,6 +80,10 @@ struct RayHit
     float distance;
     // Rayが衝突した地点の法線情報
     float3 normal;
+    // 衝突した地点のアルベド
+    float3 albedo;
+    // 衝突した地点のスペキュラ
+    float3 specular;
 };
 
 // RayHitの生成
@@ -93,16 +111,20 @@ void IntersectGroundPlane(Ray ray, inout RayHit bestHit)
         bestHit.position = ray.origin + t * ray.direction;
         // 地面は上向きとする
         bestHit.normal = float3(0.0f, 1.0f, 0.0f);
+        // 衝突した地面のアルベドを設定
+        bestHit.albedo = float3(0.8f, 0.8f, 0.8f);
+        // 衝突した地面のスペキュラを設定
+        bestHit.specular = float3(0.8f, 0.8f, 0.8f);
     }
 }
 
 // 球との衝突判定
 // 球と衝突していたらbestHitに衝突情報を格納
-void IntersectSphere(Ray ray, inout RayHit bestHit, float4 sphere)
+void IntersectSphere(Ray ray, inout RayHit bestHit, Sphere sphere)
 {
-    float3 d = ray.origin - sphere.xyz;
+    float3 d = ray.origin - sphere.position;
     float p1 = -dot(ray.direction, d);
-    float radius = sphere.w;
+    float radius = sphere.radius;
     float p2sqr = p1 * p1 - dot(d, d) + radius * radius;
     if (p2sqr < 0)
     {
@@ -118,7 +140,11 @@ void IntersectSphere(Ray ray, inout RayHit bestHit, float4 sphere)
         // 衝突した位置を格納
         bestHit.position = ray.origin + t * ray.direction;
         // 衝突した位置の向きを格納（衝突した位置から級の頂点）
-        bestHit.normal = normalize(bestHit.position - sphere.xyz);
+        bestHit.normal = normalize(bestHit.position - sphere.position);
+        // 衝突した球のアルベドを設定
+        bestHit.albedo = sphere.albedo;
+        // 衝突した球のスペキュラを設定
+        bestHit.specular = sphere.specular;
     }
 }
 
@@ -129,8 +155,14 @@ RayHit Trace(Ray ray)
     RayHit bestHit = CreateRayHit();
     // 地面との衝突判定
     IntersectGroundPlane(ray, bestHit);
+    
     // 球との衝突判定
-    IntersectSphere(ray, bestHit, float4(0, 3.0f, 0, 3.0f));
+    uint numSpheres, stride;
+    _Spheres.GetDimensions(numSpheres, stride);
+    for (uint i = 0; i < numSpheres; i++)
+    {
+        IntersectSphere(ray, bestHit, _Spheres[i]);
+    }
     
     return bestHit;
 }
@@ -141,13 +173,10 @@ float3 Shade(inout Ray ray, RayHit hit)
     // 何らかのオブジェクトと衝突したか
     if (hit.distance < 1.#INF)
     {
-        float3 albedo = float3(0.8f, 0.8f, 0.8f);
-        float3 specular = float3(0.3f, 0.3f, 0.3f);
-
         // 反射させたRay情報で更新
         ray.origin = hit.position + hit.normal * 0.001f;
         ray.direction = reflect(ray.direction, hit.normal);
-        ray.energy *= specular;
+        ray.energy *= hit.specular;
 
         // シャドウテスト
         // ライト方向にRayを打って何にもぶつからなかったら（遮蔽物がなかったら）光があたっていることにする
@@ -160,7 +189,7 @@ float3 Shade(inout Ray ray, RayHit hit)
         }
 
         // 拡散反射光
-        return saturate(dot(hit.normal, _DirectionalLight.xyz) * -1) * _DirectionalLight.w * albedo;
+        return saturate(dot(hit.normal, _DirectionalLight.xyz) * -1) * _DirectionalLight.w * hit.albedo;
     }
     // 何とも衝突していない場合はスカイボックス色を出力する
     else
