@@ -39,6 +39,11 @@ public class RayTracingMain : MonoBehaviour
 		}
 	}
 
+	public void SetRenderTextureScale(float renderTextureScale)
+	{
+		this.renderTextureScale = renderTextureScale;
+	}
+
 	public void Setup()
 	{
 		if (sphereBuffer != null)
@@ -118,6 +123,10 @@ public class RayTracingMain : MonoBehaviour
 		if (Time.frameCount % 3 == 0)
 		{
 			Render(destination);
+		}
+		else
+		{
+			Graphics.Blit(target, destination);
 		}
 	}
 
