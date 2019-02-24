@@ -39,6 +39,17 @@ public class RayTracingMain : MonoBehaviour
 		}
 	}
 
+	public void Setup()
+	{
+		if (sphereBuffer != null)
+		{
+			sphereBuffer.Release();
+		}
+
+		currentSample = 0;
+		SetUpScene();
+	}
+
 	private void OnEnable()
 	{
 		currentSample = 0;
