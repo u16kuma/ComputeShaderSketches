@@ -2,11 +2,12 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 public class FPSViewer : MonoBehaviour
 {
 	[SerializeField]
-	private Text text;
+	private TextMeshProUGUI text;
 
 	int frameCount;
 	float prevTime;
