@@ -221,7 +221,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     // 指定uvのRayを取得
     Ray ray = CreateCameraRay(uv);
     
-    // 最大８回反射する
+    // 最大8回反射する
     float3 result = float3(0, 0, 0);
     for (int i = 0; i < 8; i++)
     {

@@ -23,6 +23,7 @@ public class RayTracingMain : MonoBehaviour
 	public uint spheresMax = 100;
 	public float SpherePlacementRadius = 100.0f;
 	private ComputeBuffer sphereBuffer;
+	private float renderTextureScale = 0.2f;
 
 	private void Awake()
 	{
@@ -93,17 +94,20 @@ public class RayTracingMain : MonoBehaviour
 		rayTracingShader.SetMatrix("_CameraToWorld", camera.cameraToWorldMatrix);
 		rayTracingShader.SetMatrix("_CameraInverseProjection", camera.projectionMatrix.inverse);
 		rayTracingShader.SetTexture(0, "_SkyboxTexture", skyboxTexture);
-		rayTracingShader.SetVector("_PixelOffset", new Vector2(Random.value, Random.value));
+		//rayTracingShader.SetVector("_PixelOffset", new Vector2(Random.value, Random.value));
 
 		Vector3 lVec = directionalLight.transform.forward;
 		rayTracingShader.SetVector("_DirectionalLight", new Vector4(lVec.x, lVec.y, lVec.z, directionalLight.intensity));
 
 		rayTracingShader.SetBuffer(0, "_Spheres", sphereBuffer);
 	}
-
+	
 	private void OnRenderImage(RenderTexture source, RenderTexture destination)
 	{
-		Render(destination);
+		if (Time.frameCount % 3 == 0)
+		{
+			Render(destination);
+		}
 	}
 
 	private void Render(RenderTexture destination)
@@ -113,24 +117,25 @@ public class RayTracingMain : MonoBehaviour
 		SetShaderParameters();
 
 		rayTracingShader.SetTexture(0, "Result", target);
-		int threadGroupX = Mathf.CeilToInt(Screen.width / 8.0f);
-		int threadGroupY = Mathf.CeilToInt(Screen.height / 8.0f);
+		int threadGroupX = Mathf.CeilToInt((int)(Screen.width * renderTextureScale) / 8.0f);
+		int threadGroupY = Mathf.CeilToInt((int)(Screen.height * renderTextureScale) / 8.0f);
 		rayTracingShader.Dispatch(0, threadGroupX, threadGroupY, 1);
-
+		
 		if (addMaterial == null)
 		{
 			addMaterial = new Material(Shader.Find("Hidden/AddShader"));
 		}
 		addMaterial.SetFloat("_Sample", currentSample);
-		Graphics.Blit(target, destination, addMaterial);
+		//Graphics.Blit(target, destination, addMaterial);
+		Graphics.Blit(target, destination);
 		currentSample++;
 	}
 
 	private void InitRenderTexture()
 	{
 		if (target == null ||
-			target.width != Screen.width ||
-			target.height != Screen.height)
+			target.width != (int)(Screen.width * renderTextureScale) ||
+			target.height != (int)(Screen.height * renderTextureScale))
 		{
 			if (target != null)
 			{
@@ -138,8 +143,8 @@ public class RayTracingMain : MonoBehaviour
 			}
 
 			target = new RenderTexture(
-				width: Screen.width,
-				height: Screen.height,
+				width: (int)(Screen.width * renderTextureScale),
+				height: (int)(Screen.height * renderTextureScale),
 				depth: 0,
 				format: RenderTextureFormat.ARGBFloat,
 				readWrite: RenderTextureReadWrite.Linear);
