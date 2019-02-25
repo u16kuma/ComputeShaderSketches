@@ -23,6 +23,7 @@ static const float PI = 3.14159265f;
 float2 _PixelOffset;
 float4 _DirectionalLight;
 StructuredBuffer<Sphere> _Spheres;
+int _BounceNum;
 
 // Ray情報の構造体
 struct Ray
@@ -221,9 +222,9 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     // 指定uvのRayを取得
     Ray ray = CreateCameraRay(uv);
     
-    // 最大8回反射する
+    // 指定回数を上限に反射を計算する
     float3 result = float3(0, 0, 0);
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < _BounceNum; i++)
     {
         // Ray方向で一番近い地点の衝突情報を取得
         RayHit hit = Trace(ray);

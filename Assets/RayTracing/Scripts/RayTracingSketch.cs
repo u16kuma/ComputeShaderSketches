@@ -32,6 +32,9 @@ public class RayTracingSketch : Sketch
 	[SerializeField]
 	private Slider sphereNumSlider;
 
+	[SerializeField]
+	private Slider bounceNumSlider;
+
 	private void Start()
 	{
 		cameraRotateSpeedSlider.onValueChanged.AddListener((value) =>
@@ -68,5 +71,11 @@ public class RayTracingSketch : Sketch
 			main.SetSphereNum((int)value);
 		});
 		main.SetSphereNum((int)sphereNumSlider.value);
+
+		bounceNumSlider.onValueChanged.AddListener((value) =>
+		{
+			main.SetBounceNum((int)value);
+		});
+		main.SetBounceNum((int)bounceNumSlider.value);
 	}
 }

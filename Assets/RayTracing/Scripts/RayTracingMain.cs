@@ -27,6 +27,7 @@ public class RayTracingMain : MonoBehaviour
 	private int frameInterval;
 	private int renderFrameCount;
 	private int sphereNum;
+	private int bounceNum;
 
 	private void Awake()
 	{
@@ -50,6 +51,11 @@ public class RayTracingMain : MonoBehaviour
 	public void SetSphereNum(int value)
 	{
 		sphereNum = value;
+	}
+
+	public void SetBounceNum(int value)
+	{
+		bounceNum = value;
 	}
 
 	public void SetRenderTextureScale(float renderTextureScale)
@@ -136,6 +142,7 @@ public class RayTracingMain : MonoBehaviour
 		rayTracingShader.SetVector("_DirectionalLight", new Vector4(lVec.x, lVec.y, lVec.z, directionalLight.intensity));
 
 		rayTracingShader.SetBuffer(0, "_Spheres", sphereBuffer);
+		rayTracingShader.SetInt("_BounceNum", bounceNum);
 	}
 	
 	private void OnRenderImage(RenderTexture source, RenderTexture destination)
