@@ -26,6 +26,12 @@ public class RayTracingSketch : Sketch
 	[SerializeField]
 	private Slider textureSizeSlider;
 
+	[SerializeField]
+	private Slider frameIntervalSlider;
+
+	[SerializeField]
+	private Slider sphereNumSlider;
+
 	private void Start()
 	{
 		cameraRotateSpeedSlider.onValueChanged.AddListener((value) =>
@@ -50,5 +56,17 @@ public class RayTracingSketch : Sketch
 			main.SetRenderTextureScale(value / 10.0f);
 		});
 		textureSizeSlider.value = textureSizeSlider.value;
+
+		frameIntervalSlider.onValueChanged.AddListener((value) =>
+		{
+			main.SetFrameInterval((int)value);
+		});
+		main.SetFrameInterval((int)frameIntervalSlider.value);
+
+		sphereNumSlider.onValueChanged.AddListener((value) =>
+		{
+			main.SetSphereNum((int)value);
+		});
+		main.SetSphereNum((int)sphereNumSlider.value);
 	}
 }

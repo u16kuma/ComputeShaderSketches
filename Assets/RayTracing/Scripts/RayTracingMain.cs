@@ -24,6 +24,9 @@ public class RayTracingMain : MonoBehaviour
 	public float SpherePlacementRadius = 100.0f;
 	private ComputeBuffer sphereBuffer;
 	private float renderTextureScale = 0.2f;
+	private int frameInterval;
+	private int renderFrameCount;
+	private int sphereNum;
 
 	private void Awake()
 	{
@@ -37,6 +40,16 @@ public class RayTracingMain : MonoBehaviour
 			currentSample = 0;
 			transform.hasChanged = false;
 		}
+	}
+
+	public void SetFrameInterval(int value)
+	{
+		frameInterval = value;
+	}
+
+	public void SetSphereNum(int value)
+	{
+		sphereNum = value;
 	}
 
 	public void SetRenderTextureScale(float renderTextureScale)
@@ -73,6 +86,7 @@ public class RayTracingMain : MonoBehaviour
 	{
 		List<Sphere> spheres = new List<Sphere>();
 
+		int sphereCount = 0;
 		for (int i = 0; i < spheresMax; i++)
 		{
 			Sphere sphere = new Sphere();
@@ -97,6 +111,12 @@ public class RayTracingMain : MonoBehaviour
 
 			spheres.Add(sphere);
 
+			sphereCount++;
+			if (sphereCount >= sphereNum)
+			{
+				break;
+			}
+
 		SkipSphere:
 			continue;
 		}
@@ -120,9 +140,10 @@ public class RayTracingMain : MonoBehaviour
 	
 	private void OnRenderImage(RenderTexture source, RenderTexture destination)
 	{
-		if (Time.frameCount % 3 == 0)
+		if (Time.frameCount >= renderFrameCount + frameInterval)
 		{
 			Render(destination);
+			renderFrameCount = Time.frameCount;
 		}
 		else
 		{
