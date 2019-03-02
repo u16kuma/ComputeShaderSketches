@@ -1,0 +1,244 @@
+﻿#pragma kernel CSMain
+
+// 球オブジェクト
+struct Sphere
+{
+    // 球の中心位置
+    float3 position;
+    // 球の半径
+    float radius;
+    // 球のアルベド
+    float3 albedo;
+    // 球のスペキュラ
+    float3 specular;
+};
+
+RWTexture2D<float4> Result;
+float4x4 _CameraToWorld;
+float4x4 _CameraInverseProjection;
+Texture2D<float4> _SkyboxTexture;
+SamplerState sampler_SkyboxTexture;
+// 円周率
+static const float PI = 3.14159265f;
+float2 _PixelOffset;
+float4 _DirectionalLight;
+StructuredBuffer<Sphere> _Spheres;
+int _BounceNum;
+
+// Ray情報の構造体
+struct Ray
+{
+    // 開始地点
+    float3 origin;
+    // Rayの向き
+    float3 direction;
+    // エネルギー
+    float3 energy;
+};
+
+// Rayの生成
+inline Ray CreateRay(float3 origin, float3 direction)
+{
+    Ray ray;
+    ray.origin = origin;
+    ray.direction = direction;
+    ray.energy = float3(1.0f, 1.0f, 1.0f);
+    return ray;
+}
+
+// カメラのRay情報を生成
+Ray CreateCameraRay(float2 uv)
+{
+    // ワールド空間でのカメラの位置を取得
+    // （ビュー座標系の[0,0,0]の位置はカメラが置かれた位置になる）
+    float3 origin = mul(_CameraToWorld, float4(0.0f, 0.0f, 0.0f, 1.0f)).xyz;
+
+    // ワールド空間でのカメラの向きを取得
+    float3 direction;
+    {
+        // 射影座標系からビュー座標系へ変換
+        // ビューポート座標[-1 ~ 1, -1 ~ 1, 0, 1]を射影変換行列の逆行列をかけると
+        // カメラ座標系での前方クリップ面の座標が求められる
+        // （カメラからのオフセット値になる）
+        direction = mul(_CameraInverseProjection, float4(uv, 0.0f, 1.0f)).xyz;
+        // ビュー座標系からワールド座標系へ変換（回転）
+        // （ワールド空間でのカメラからのオフセット値）
+        direction = mul(_CameraToWorld, float4(direction, 0.0f)).xyz;
+        // ベクトルを正規化
+        // （ワールド空間でのカメラの向き）
+        direction = normalize(direction);
+    }
+
+    return CreateRay(origin, direction);
+}
+
+// RayHit情報の構造体
+struct RayHit
+{
+    // Rayが衝突した地点
+    float3 position;
+    // カメラとの距離
+    float distance;
+    // Rayが衝突した地点の法線情報
+    float3 normal;
+    // 衝突した地点のアルベド
+    float3 albedo;
+    // 衝突した地点のスペキュラ
+    float3 specular;
+};
+
+// RayHitの生成
+inline RayHit CreateRayHit()
+{
+    RayHit hit;
+    hit.position = float3(0.0f, 0.0f, 0.0f);
+    hit.distance = 1.#INF;
+    hit.normal = float3(0.0f, 0.0f, 0.0f);
+    return hit;
+}
+
+// 地面との衝突判定（y = 0の平面とする）
+// 地面と衝突していたらbestHitに衝突情報を格納
+void IntersectGroundPlane(Ray ray, inout RayHit bestHit)
+{
+    // カメラと地面との距離を算出
+    float t = -ray.origin.y / ray.direction.y;
+    // 地面と衝突した && bestHitに格納されている衝突情報より近い位置で衝突した
+    if (0 < t && t < bestHit.distance)
+    {
+        // 地面とカメラの距離を格納
+        bestHit.distance = t;
+        // 衝突した位置を格納
+        bestHit.position = ray.origin + t * ray.direction;
+        // 地面は上向きとする
+        bestHit.normal = float3(0.0f, 1.0f, 0.0f);
+        // 衝突した地面のアルベドを設定
+        bestHit.albedo = float3(0.8f, 0.8f, 0.8f);
+        // 衝突した地面のスペキュラを設定
+        bestHit.specular = float3(0.8f, 0.8f, 0.8f);
+    }
+}
+
+// 球との衝突判定
+// 球と衝突していたらbestHitに衝突情報を格納
+void IntersectSphere(Ray ray, inout RayHit bestHit, Sphere sphere)
+{
+    float3 d = ray.origin - sphere.position;
+    float p1 = -dot(ray.direction, d);
+    float radius = sphere.radius;
+    float p2sqr = p1 * p1 - dot(d, d) + radius * radius;
+    if (p2sqr < 0)
+    {
+        return;
+    }
+    float p2 = sqrt(p2sqr);
+    float t = p1 - p2 > 0 ? p1 - p2 : p1 + p2;
+    // 球と衝突した && bestHitに格納されている衝突情報より近い位置で衝突した
+    if (0 < t && t < bestHit.distance)
+    {
+        // 球とカメラの距離を格納
+        bestHit.distance = t;
+        // 衝突した位置を格納
+        bestHit.position = ray.origin + t * ray.direction;
+        // 衝突した位置の向きを格納（衝突した位置から級の頂点）
+        bestHit.normal = normalize(bestHit.position - sphere.position);
+        // 衝突した球のアルベドを設定
+        bestHit.albedo = sphere.albedo;
+        // 衝突した球のスペキュラを設定
+        bestHit.specular = sphere.specular;
+    }
+}
+
+// 順番にオブジェクトとの衝突判定を行い
+// 一番近い位置で衝突した情報を格納する
+RayHit Trace(Ray ray)
+{
+    RayHit bestHit = CreateRayHit();
+    // 地面との衝突判定
+    IntersectGroundPlane(ray, bestHit);
+    
+    // 球との衝突判定
+    uint numSpheres, stride;
+    _Spheres.GetDimensions(numSpheres, stride);
+    for (uint i = 0; i < numSpheres; i++)
+    {
+        IntersectSphere(ray, bestHit, _Spheres[i]);
+    }
+    
+    return bestHit;
+}
+
+// 衝突情報をもとに色情報を出力する
+float3 Shade(inout Ray ray, RayHit hit)
+{
+    // 何らかのオブジェクトと衝突したか
+    if (hit.distance < 1.#INF)
+    {
+        // 反射させたRay情報で更新
+        ray.origin = hit.position + hit.normal * 0.001f;
+        ray.direction = reflect(ray.direction, hit.normal);
+        ray.energy *= hit.specular;
+
+        // シャドウテスト
+        // ライト方向にRayを打って何にもぶつからなかったら（遮蔽物がなかったら）光があたっていることにする
+        bool shadow = false;
+        Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001f, -1 * _DirectionalLight.xyz);
+        RayHit shadowHit = Trace(shadowRay);
+        if (shadowHit.distance != 1.#INF)
+        {
+            return float3(0.0f, 0.0f, 0.0f);
+        }
+
+        // 拡散反射光
+        return saturate(dot(hit.normal, _DirectionalLight.xyz) * -1) * _DirectionalLight.w * hit.albedo;
+    }
+    // 何とも衝突していない場合はスカイボックス色を出力する
+    else
+    {
+        // スカイボックスは反射しないのでエネルギーを０に設定
+        ray.energy = 0.0f;
+
+        // デカルト座標系を球面座標系に変換
+        float theta = acos(ray.direction.y) / -PI;
+        float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
+
+        // スカイボックスの色を出力
+        return _SkyboxTexture.SampleLevel(sampler_SkyboxTexture, float2(phi, theta), 0).xyz;
+    }
+}
+
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    // RenderTextureのサイズを取得
+    float2 size;
+    Result.GetDimensions(size.x, size.y);
+    // CPU側で毎フレーム生成したランダムなオフセット値を加算
+    // （アンチエイリアス描画のため）
+    float2 pixel = id.xy + _PixelOffset;
+    // スクリーン座標をビューポート座標（[-1 ~ 1, -1 ~ 1]）に変換
+    float2 uv = float2(pixel / size * 2.0f - 1.0f);
+
+    // 指定uvのRayを取得
+    Ray ray = CreateCameraRay(uv);
+    
+    // 指定回数を上限に反射を計算する
+    float3 result = float3(0, 0, 0);
+    //for (int i = 0; i < _BounceNum; i++)
+    {
+        // Ray方向で一番近い地点の衝突情報を取得
+        //RayHit hit = Trace(ray);
+        // 色情報に変換
+        //result += ray.energy * Shade(ray, hit);
+
+        // エネルギーが無くなったら終了
+        //if (!any(ray.energy))
+        //{
+        //    break;
+        //}
+    }
+    // 色を格納
+    //Result[id.xy] = float4(result, 1);
+    Result[id.xy] = float4(1, 1, 1, 1);
+
+}
