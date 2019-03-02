@@ -111,7 +111,7 @@ public class RayTracingMain : MonoBehaviour
 			}
 
 			Color color = Random.ColorHSV();
-			bool metal = true;// Random.value < 0.5f;
+			bool metal = Random.value < 0.5f;
 			sphere.albedo = metal ? Vector3.zero : new Vector3(color.r, color.g, color.b);
 			sphere.specular = metal ? new Vector3(color.r, color.g, color.b) : Vector3.one * 0.04f;
 

@@ -37,7 +37,7 @@ struct Ray
 };
 
 // Rayの生成
-inline Ray CreateRay(float3 origin, float3 direction)
+Ray CreateRay(float3 origin, float3 direction)
 {
     Ray ray;
     ray.origin = origin;
@@ -88,7 +88,7 @@ struct RayHit
 };
 
 // RayHitの生成
-inline RayHit CreateRayHit()
+RayHit CreateRayHit()
 {
     RayHit hit;
     hit.position = float3(0.0f, 0.0f, 0.0f);
@@ -224,21 +224,19 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     
     // 指定回数を上限に反射を計算する
     float3 result = float3(0, 0, 0);
-    //for (int i = 0; i < _BounceNum; i++)
+    for (int i = 0; i < _BounceNum; i++)
     {
         // Ray方向で一番近い地点の衝突情報を取得
-        //RayHit hit = Trace(ray);
+        RayHit hit = Trace(ray);
         // 色情報に変換
-        //result += ray.energy * Shade(ray, hit);
+        result += ray.energy * Shade(ray, hit);
 
         // エネルギーが無くなったら終了
-        //if (!any(ray.energy))
-        //{
-        //    break;
-        //}
+        if (!any(ray.energy))
+        {
+            break;
+        }
     }
     // 色を格納
-    //Result[id.xy] = float4(result, 1);
-    Result[id.xy] = float4(1, 1, 1, 1);
-
+    Result[id.xy] = float4(result, 1);
 }
